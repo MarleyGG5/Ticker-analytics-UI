@@ -27,6 +27,7 @@ class MarketDashboard:
 		self.root.title("MarketLens | Stock Performance Dashboard")
 		self.root.geometry("1000x680")
 		self.root.minsize(820, 580)
+		self.root.resizable(True, True)
 		self.root.configure(bg="#F4F1EA")
 		self._configure_style()
 		self.summary = None
@@ -62,9 +63,9 @@ class MarketDashboard:
 		header = ttk.Frame(self.analysis_mode, style="App.TFrame")
 		header.pack(fill="x", padx=16, pady=(14, 4))
 		ttk.Label(header, text="MarketLens", style="Title.TLabel").pack(anchor="w")
-		ttk.Label(header, text="Compare returns, risk, and relationships across the market", style="Subtitle.TLabel").pack(anchor="w", pady=(0, 4))
+		ttk.Label(header, text="Compare returns, risk, and relationships across the market", style="Subtitle.TLabel").pack(anchor="w")
 		controls = ttk.LabelFrame(self.analysis_mode, text="Analysis controls", padding=10)
-		controls.pack(fill="x", padx=12, pady=(12, 6))
+		controls.pack(fill="x", padx=12, pady=(4, 6))
 
 		ttk.Label(controls, text="Primary stock").grid(row=0, column=0, sticky="w")
 		self.primary_var = tk.StringVar(value="Apple (AAPL)")
