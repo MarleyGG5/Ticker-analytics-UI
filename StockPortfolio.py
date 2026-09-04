@@ -42,6 +42,7 @@ class MarketDashboard:
 		self.live_holdings = {}
 		self.live_history = []
 		self.live_total_invested = 0.0
+		self._refresh_job = None
 		self._load_live_portfolio()
 		self._build_mode_tabs()
 		self._build_controls()
@@ -79,7 +80,11 @@ class MarketDashboard:
 			self.status_var.set(f"Portfolio could not be saved: {error}")
 
 	def _close_app(self):
+		if self._refresh_job is not None:
+			self.root.after_cancel(self._refresh_job)
+			self._refresh_job = None
 		self._save_live_portfolio()
+		self.root.quit()
 		self.root.destroy()
 
 	def _configure_style(self):
@@ -179,6 +184,10 @@ class MarketDashboard:
 		self.table.tag_configure("even", background="#FFFFFF")
 		self.table.tag_configure("odd", background="#F1F7F5")
 		self.table.pack(fill="both", expand=True)
+		self.performance_selection = "All"
+		self.performance_selection_label = None
+		self.performance_chart_container = ttk.Frame(self.performance_tab, style="Tab.TFrame")
+		self.performance_chart_container.pack(fill="both", expand=True, padx=8, pady=(10, 8))
 
 	def _build_simulation(self):
 		investment_controls = ttk.LabelFrame(self.simulation_mode, text="Mock investment", padding=12)
@@ -313,8 +322,8 @@ class MarketDashboard:
 		times = [point[0] for point in self.live_history]
 		values = [point[1] for point in self.live_history]
 		invested = [point[2] for point in self.live_history]
-		axis.plot(times, values, color="#D96C4F", linewidth=2.5, marker="o", label="Portfolio value")
-		axis.plot(times, invested, color="#1F7A72", linestyle="--", linewidth=2, label="Initial investment")
+		axis.plot(times, values, color="#D96C4F", linewidth=2.5, marker=None, label="Portfolio value")
+		axis.plot(times, invested, color="#1F7A72", linestyle="--", linewidth=2, marker=None, label="Initial investment")
 		axis.margins(y=0.2)
 		axis.set_title("Live paper portfolio")
 		axis.set_ylabel("Value ($)")
@@ -327,7 +336,7 @@ class MarketDashboard:
 	def _auto_refresh_live_portfolio(self):
 		if self.live_holdings:
 			self.refresh_live_portfolio()
-		self.root.after(15000, self._auto_refresh_live_portfolio)
+		self._refresh_job = self.root.after(15000, self._auto_refresh_live_portfolio)
 
 	def _selected_tickers(self):
 		primary_value = self.primary_var.get().strip()
@@ -407,17 +416,62 @@ class MarketDashboard:
 		for child in tab.winfo_children():
 			child.destroy()
 
+	def _on_performance_pick(self, event):
+		line = event.artist
+		selected = line.get_label()
+		if selected == self.performance_selection:
+			self.performance_selection = "All"
+		else:
+			self.performance_selection = selected
+		self._refresh_performance_selection()
+
+	def _on_performance_blank_click(self, event):
+		if self.performance_selection == "All" or event.inaxes != self.performance_axis:
+			return
+		clicked_line = any(line.contains(event)[0] for line in self.performance_axis.lines)
+		if not clicked_line:
+			self.performance_selection = "All"
+			self._refresh_performance_selection()
+
+	def _refresh_performance_selection(self):
+		if not hasattr(self, "performance_axis") or self.performance_axis is None:
+			return
+		for line in self.performance_axis.lines:
+			is_selected = self.performance_selection == "All" or line.get_label() == self.performance_selection
+			line.set_alpha(1.0 if is_selected else 0.24)
+			line.set_linewidth(3.1 if is_selected else 1.8)
+		if self.performance_selection_label is not None:
+			self.performance_selection_label.remove()
+			self.performance_selection_label = None
+		if self.performance_selection != "All":
+			self.performance_selection_label = self.performance_axis.text(0.5, 0.93, self.performance_selection, transform=self.performance_axis.transAxes, ha="center", va="bottom", fontsize=11, fontweight="bold", color="#1F7A72")
+		self.performance_axis.figure.canvas.draw_idle()
+
 	def _show_performance(self):
-		self._clear_chart(self.performance_tab)
-		figure, axis = plt.subplots(figsize=(10, 5.5))
-		self.normalized_prices.plot(ax=axis, linewidth=2)
-		axis.margins(y=0.2)
-		axis.set_title(f"Growth of $100 for {self.analysis_label}")
-		axis.set_ylabel("Portfolio value ($)")
-		axis.grid(True, alpha=0.3)
-		axis.legend(title="Ticker")
-		figure.tight_layout()
-		self._embed_figure(self.performance_tab, figure)
+		if not hasattr(self, "performance_chart_container"):
+			return
+		if self.normalized_prices is None:
+			return
+		if not hasattr(self, "performance_figure") or self.performance_figure is None:
+			self.performance_figure, self.performance_axis = plt.subplots(figsize=(10, 5.5))
+			self.performance_canvas = FigureCanvasTkAgg(self.performance_figure, master=self.performance_chart_container)
+			self.performance_canvas.get_tk_widget().pack(fill="both", expand=True)
+			self.performance_canvas.mpl_connect("pick_event", self._on_performance_pick)
+			self.performance_canvas.mpl_connect("button_press_event", self._on_performance_blank_click)
+		else:
+			self.performance_axis.clear()
+		colors = plt.get_cmap("tab10").colors
+		for index, column in enumerate(self.normalized_prices.columns):
+			line, = self.performance_axis.plot(self.normalized_prices.index, self.normalized_prices[column], linewidth=3.1, alpha=1.0, color=colors[index % len(colors)], label=column, picker=True, pickradius=8)
+			line.set_pickradius(8)
+		self.performance_axis.margins(y=0.2)
+		self.performance_axis.set_title(f"Growth of $100 for {self.analysis_label}")
+		self.performance_axis.set_ylabel("Portfolio value ($)")
+		self.performance_axis.grid(True, alpha=0.3)
+		self.performance_axis.legend(title="Ticker")
+		self.performance_figure.tight_layout()
+		self._refresh_performance_selection()
+		self.performance_canvas.draw_idle()
 
 	def _show_risk(self):
 		self._clear_chart(self.risk_tab)
